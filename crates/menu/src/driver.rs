@@ -308,9 +308,9 @@ impl NativeMenu {
 
     /// The commands clicked since the last call that the gate ([`NativeMenu::set_gate`]) allows
     /// now, for the app to run like in-window menu clicks; the others are dropped.
-    /// [`Builtin::Minimize`] (minimizes the window) and [`Builtin::Quit`] (asks the window to
-    /// close, see [`craft_quit::on_menu_event`]) are run here and left out. A ⌘V from the menu
-    /// ([`ClipboardKeys::Egui`]) is asked of eframe here too.
+    /// [`Builtin::Minimize`] (minimizes the focused window, or the root when none reports focus)
+    /// and [`Builtin::Quit`] (asks the window to close, see [`craft_quit::on_menu_event`]) are run
+    /// here and left out. A ⌘V from the menu ([`ClipboardKeys::Egui`]) is asked of eframe here too.
     pub fn take_clicks(&mut self, ctx: &egui::Context) -> Vec<CommandRef> {
         if std::mem::take(&mut self.paste) {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -321,7 +321,7 @@ impl NativeMenu {
                 continue;
             }
             match Builtin::of(&command) {
-                Some(Builtin::Minimize) => ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
+                Some(Builtin::Minimize) => ctx.send_viewport_cmd_to(focused_viewport(ctx), egui::ViewportCommand::Minimized(true)),
                 Some(Builtin::Quit) => {
                     craft_quit::on_menu_event(ctx, Builtin::Quit.id());
                 }
@@ -408,6 +408,16 @@ impl NativeMenu {
         }
         self.synced_gate = Some(self.gate);
     }
+}
+
+/// The viewport that has the keyboard, or the root when none reports focus.
+///
+/// Native menu clicks are taken on the viewport that is running, usually the root. The system's
+/// own Minimize item miniaturizes the key window; the custom item ([`Builtin::Minimize`], used
+/// when the app has taken ⌘M) does the same. Focus comes from each viewport's
+/// [`egui::ViewportInfo::focused`], which the integration sets for every window.
+fn focused_viewport(ctx: &egui::Context) -> egui::ViewportId {
+    ctx.input(|input| input.raw.viewports.iter().find_map(|(id, info)| (info.focused == Some(true)).then_some(*id))).unwrap_or(egui::ViewportId::ROOT)
 }
 
 /// `Some` when `raw` has a press or Escape that closes an open menu: `Some(true)` when, with
