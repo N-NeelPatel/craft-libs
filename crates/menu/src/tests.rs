@@ -375,6 +375,34 @@ fn clicks_and_syncs() {
     assert_eq!((builds.get(), synced.borrow().len()), (3, 3), "an event re-syncs");
 }
 
+/// Window › Minimize is taken while the root viewport is running, and miniaturizes the window
+/// that has the keyboard. With no window reporting focus, the root is that window
+/// (`clicks_and_syncs`).
+#[test]
+fn minimize_miniaturizes_the_focused_window() {
+    let events = Rc::new(RefCell::new(vec![Event::Click(Builtin::Minimize.command())]));
+    let mut menu = NativeMenu::new(Box::new(Fake { events, ..Default::default() }));
+    menu.raw_input(&mut egui::RawInput::default());
+
+    let child = egui::ViewportId::from_hash_of("document");
+    let mut input = egui::RawInput::default();
+    input.viewports.entry(egui::ViewportId::ROOT).or_default().focused = Some(false);
+    input.viewports.insert(child, egui::ViewportInfo { parent: Some(egui::ViewportId::ROOT), focused: Some(true), ..Default::default() });
+
+    let ctx = egui::Context::default();
+    let mut out = ctx.run_ui(input, |ui| {
+        let ctx = ui.ctx();
+        ctx.set_embed_viewports(false);
+        ctx.show_viewport_deferred(child, egui::ViewportBuilder::default(), |_, _| {});
+        assert!(menu.take_clicks(ctx).is_empty(), "Minimize runs in the crate");
+    });
+    out.textures_delta.clear(); // not painted
+
+    let has_minimize = |id| out.viewport_output.get(&id).is_some_and(|output| output.commands.contains(&egui::ViewportCommand::Minimized(true)));
+    assert!(has_minimize(child), "the focused window is the one that minimizes");
+    assert!(!has_minimize(egui::ViewportId::ROOT), "the root window stays up");
+}
+
 fn press() -> egui::Event {
     egui::Event::PointerButton { pos: egui::pos2(300.0, 200.0), button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }
 }
